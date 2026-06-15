@@ -32,7 +32,26 @@ app.include_router(receipt.router, prefix="/receipt", tags=["Receipt"])
 
 @app.get("/")
 def root():
-    return {"status": "Pavey API is running"}
+    return {"status": "Pavey API is running", "version": "1.0.0"}
+
+@app.get("/health")
+def health_check():
+    """Cek status semua service — tidak perlu auth."""
+    import os
+    checks = {
+        "supabase_url": bool(os.getenv("SUPABASE_URL")),
+        "supabase_key": bool(os.getenv("SUPABASE_SERVICE_KEY")),
+        "groq_api_key": bool(os.getenv("GROQ_API_KEY")),
+        "openrouter_key": bool(os.getenv("OPENROUTER_API_KEY")),
+        "openweather_key": bool(os.getenv("OPENWEATHER_API_KEY")),
+        "gemini_key": bool(os.getenv("GEMINI_API_KEY")),
+    }
+    all_ok = all(checks.values())
+    return {
+        "status": "healthy" if all_ok else "degraded",
+        "env_checks": checks,
+        "missing_keys": [k for k, v in checks.items() if not v]
+    }
 
 def custom_openapi():
     if app.openapi_schema:

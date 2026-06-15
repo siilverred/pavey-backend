@@ -7,12 +7,13 @@ from typing import Optional
 from enum import Enum
 import json
 import re
+import traceback
 
 router = APIRouter()
 
 class ExpenseCreate(BaseModel):
     trip_id: str
-    amount: int
+    amount: float  # float agar bisa handle desimal dari frontend
     category: str
     description: str
 
@@ -54,18 +55,26 @@ async def add_expense(
     current_user = Depends(get_current_user)
 ):
     try:
+        # Validasi trip_id tidak kosong
+        if not data.trip_id or data.trip_id == 'trip-default':
+            raise HTTPException(status_code=400, detail="trip_id tidak valid")
+
         res = supabase.table("expenses").insert({
             "user_id": current_user.id,
             "trip_id": data.trip_id,
-            "amount": data.amount,
+            "amount": int(abs(data.amount)),  # simpan selalu positif, abs untuk handle negatif dari frontend
             "category": data.category,
             "description": data.description
         }).execute()
+
+        if not res.data:
+            raise HTTPException(status_code=500, detail="Gagal menyimpan expense")
 
         return {"message": "Expense berhasil ditambahkan", "data": res.data[0]}
     except HTTPException:
         raise
     except Exception as e:
+        print(f"[Wallet/add_expense] Error: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -81,6 +90,10 @@ async def get_expenses(
     Contoh: GET /wallet/expenses/trip-id?display_currency=USD
     """
     try:
+        # Validasi trip_id
+        if not trip_id or trip_id == 'trip-default':
+            return {"trip_id": trip_id, "total_spent_idr": 0, "transactions": []}
+
         res = supabase.table("expenses")\
             .select("*")\
             .eq("trip_id", trip_id)\
@@ -113,7 +126,29 @@ async def get_expenses(
     except HTTPException:
         raise
     except Exception as e:
+        print(f"[Wallet/get_expenses] trip_id={trip_id} Error: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/expenses/{expense_id}")
+async def delete_expense(
+    expense_id: str,
+    current_user = Depends(get_current_user)
+):
+    """Hapus satu expense berdasarkan ID-nya."""
+    try:
+        res = supabase.table("expenses")\
+            .delete()\
+            .eq("id", expense_id)\
+            .eq("user_id", current_user.id)\
+            .execute()
+        return {"message": "Expense dihapus", "deleted": len(res.data)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Wallet/delete_expense] expense_id={expense_id} Error: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.post("/expenses/{trip_id}/convert")
