@@ -35,16 +35,6 @@ app.include_router(social_parser.router, prefix="/social", tags=["Social Parser"
 def root():
     return {"status": "Pavey API is running", "version": "1.0.0"}
 
-@app.get("/debug-db")
-async def debug_db():
-    import os
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_KEY")
-    return {
-        "url": url,
-        "key": key
-    }
-
 @app.get("/health")
 def health_check():
     """Cek status semua service — tidak perlu auth."""
