@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from services.supabase_client import supabase
 from services.gemini_service import analyze_image
 from services.llama_service import chat_with_llama
+from services.exchange_service import get_rate_from_idr
 from middleware.auth_middleware import get_current_user
 from typing import Optional, List
 from enum import Enum
@@ -278,10 +279,14 @@ Rules:
             source_currency = base_result.get("currency_detected", "IDR")
             items = base_result.get("items", [])
 
+            # Coba dapat kurs real-time dari API jika asalnya IDR
+            rate = await get_rate_from_idr(target_currency.value) if source_currency == "IDR" else None
+            rate_hint = f"Use EXACTLY this exchange rate: {rate} for the conversion. All converted prices MUST equal original_price * {rate}." if rate is not None else "Use realistic current exchange rates."
+
             currency_prompt = f"""You are a currency converter.
 Convert prices from {source_currency} to {target_currency.value}.
-Use realistic current exchange rates.
-Return ONLY valid JSON, no explanation, no markdown, no thousand separators in numbers.
+{rate_hint}
+Return ONLY valid JSON, no explanation, no markdown, no thousand separators in numbers.""",StartLine:275,TargetContent:
 
 Receipt data to convert:
 {json.dumps({"currency": source_currency, "items": items, "totals": totals})}

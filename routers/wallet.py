@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from services.supabase_client import supabase
 from services.llama_service import chat_with_llama
+from services.exchange_service import get_rate_from_idr
 from middleware.auth_middleware import get_current_user
 from typing import Optional
 from enum import Enum
@@ -193,8 +194,13 @@ async def convert_expenses(
                 ]
             }
 
-        # Coba dapat kurs dari LLM
-        currency_prompt = f"""What is the current approximate exchange rate from IDR (Indonesian Rupiah) to {target_currency.value}?
+        # 1. Coba dapat kurs dari API ExchangeRate-API
+        rate = await get_rate_from_idr(target_currency.value)
+
+        # 2. Jika API gagal/tidak diset, coba dapat kurs dari LLM
+        if rate is None:
+            print("[Wallet] Live API rate failed or not configured, falling back to LLM rate...")
+            currency_prompt = f"""What is the current approximate exchange rate from IDR (Indonesian Rupiah) to {target_currency.value}?
 Return ONLY valid JSON, no explanation:
 {{
     "from_currency": "IDR",
@@ -202,15 +208,14 @@ Return ONLY valid JSON, no explanation:
     "rate": 0.000063,
     "note": "approximate rate"
 }}"""
-
-        rate = FALLBACK_RATES_FROM_IDR.get(target_currency.value, 0.000061)
-        try:
-            llm_response = chat_with_llama(currency_prompt)
-            rate_data = clean_json(llm_response)
-            if "rate" in rate_data and isinstance(rate_data["rate"], (int, float)):
-                rate = float(rate_data["rate"])
-        except Exception as e:
-            print(f"[Wallet] LLM rate failed, using fallback: {e}")
+            rate = FALLBACK_RATES_FROM_IDR.get(target_currency.value, 0.000061)
+            try:
+                llm_response = chat_with_llama(currency_prompt)
+                rate_data = clean_json(llm_response)
+                if "rate" in rate_data and isinstance(rate_data["rate"], (int, float)):
+                    rate = float(rate_data["rate"])
+            except Exception as e:
+                print(f"[Wallet] LLM rate failed, using fallback: {e}")
 
         # Konversi semua transaksi
         converted_transactions = []
