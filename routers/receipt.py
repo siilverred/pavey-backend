@@ -317,7 +317,7 @@ Rules:
             currency_prompt = f"""You are a currency converter.
 Convert prices from {source_currency} to {target_currency.value}.
 {rate_hint}
-Return ONLY valid JSON, no explanation, no markdown, no thousand separators in numbers.""",StartLine:275,TargetContent:
+Return ONLY valid JSON, no explanation, no markdown, no thousand separators in numbers.
 
 Receipt data to convert:
 {json.dumps({"currency": source_currency, "items": items, "totals": totals})}
@@ -343,6 +343,7 @@ Required format:
         "grand_total": 0
     }}
 }}"""
+
 
             currency_text = chat_with_llama(currency_prompt)
             print(f"[Receipt] Currency raw: {repr(currency_text)}")
