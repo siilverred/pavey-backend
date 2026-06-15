@@ -166,81 +166,77 @@ Selalu ikuti Aturan Output Kritis di bawah ini untuk menghasilkan data terstrukt
 {f"Konteks dari app: {frontend_context}" if frontend_context else ""}
 {history_str}
 
-## CRITICAL OUTPUT RULES
+## ATURAN OUTPUT KRITIS:
+1. Jawablah user dengan kalimat ramah dan informatif dalam teks biasa. JANGAN tampilkan format JSON mentah kepada user secara langsung.
+2. Di bagian paling akhir dari jawabanmu, kamu WAJIB menambahkan sebuah blok JSON terstruktur (hidden metadata block) yang dibungkus dengan tag:
+DATA_JSON> {{json}} <DATA_JSON
+3. Jika pertanyaannya adalah obrolan umum (chit-chat/greetings) atau tidak memerlukan pencarian travel/cuaca/hotel/rencana perjalanan, gunakan intent "general".
 
-For place recommendations, travel plans, weather, and hotel search, you MUST output ONLY a single ```json code block — NO text before it, NO text after it, NO explanation outside it. The "intro" field inside the JSON is where you put your human-readable response (in Indonesian or English depending on user).
+## JSON SCHEMA INTENT:
 
-FORBIDDEN: Do NOT use <DATA_JSON>, (DATA_JSON>, XML tags, or any other format. ONLY ```json blocks.
-FORBIDDEN: Do NOT write prose paragraphs then append a JSON block at the end.
-CORRECT: Output ONLY the ```json block for any travel-related request.
-
-## JSON FORMATS
-
-Place recommendations (intent: "recommend_places"):
-```json
+A) recommend_places
 {{
     "intent": "recommend_places",
-    "city": "city name",
-    "intro": "Warm 1-2 sentence response in the user's language — this is what the user sees",
+    "city": "nama kota",
+    "intro": "jawaban ramah kamu di sini yang akan ditampilkan ke user",
     "places": [
         {{
-            "name": "Place Name",
-            "type": "destination",
-            "category": "museum",
-            "description": "1-2 sentence description",
-            "address": "Full address if known",
+            "name": "Nama Tempat",
+            "type": "destination|restaurant|attraction",
+            "category": "kategori tempat",
+            "description": "deskripsi singkat tempat",
+            "address": "alamat tempat jika diketahui",
             "rating": 4.5
         }}
     ]
 }}
-```
 
-Travel plan (intent: "travel_plan"):
-```json
+B) travel_plan
 {{
     "intent": "travel_plan",
-    "city": "city name",
+    "city": "nama kota",
     "start_time": "09:00",
-    "hotel_name": "Hotel name if user mentioned one, otherwise null",
-    "intro": "Warm 1-2 sentence response in the user's language",
+    "hotel_name": "nama hotel jika disebutkan, atau null",
+    "intro": "jawaban ramah kamu di sini",
     "places": [
         {{
-            "name": "Place Name",
-            "type": "destination",
-            "category": "museum",
-            "description": "Brief activity description",
-            "address": "Address if known",
+            "name": "Nama Tempat",
+            "type": "destination|restaurant|attraction",
+            "category": "kategori",
+            "description": "deskripsi singkat aktivitas di tempat ini",
+            "address": "alamat jika diketahui",
             "rating": 4.2
         }}
     ]
 }}
-```
 
-Weather check (intent: "check_weather"):
-```json
+C) check_weather
 {{
     "intent": "check_weather",
-    "city": "city name",
-    "intro": "Brief sentence in user's language confirming you're checking weather"
+    "city": "nama kota",
+    "intro": "jawaban ramah kamu di sini"
 }}
-```
 
-Hotel search (intent: "search_hotels"):
-```json
+D) search_hotels
 {{
     "intent": "search_hotels",
-    "city": "city name",
-    "intro": "Brief sentence in user's language confirming you're searching hotels"
+    "city": "nama kota",
+    "intro": "jawaban ramah kamu di sini"
 }}
-```
 
-## PLAIN TEXT (for everything else)
-Untuk sapaan (greetings), pertanyaan umum, dan obrolan santai non-travel, jawablah secara biasa dalam plain text (tanpa JSON).
+E) general
+{{
+    "intent": "general",
+    "intro": "jawaban ramah kamu di sini"
+}}
 
-## NEVER
-- Never output coordinates — the system geocodes everything
-- Never use DATA_JSON, XML, or any format other than ```json
-- Never write a long description THEN add a JSON block at the end
+PENTING:
+- "intro" adalah satu-satunya teks yang akan ditampilkan di bubble chat user. Pastikan isinya lengkap dan penjelasan yang user butuhkan ada di "intro".
+- Blok DATA_JSON wajib berupa format JSON yang valid (tidak ada koma berlebih di akhir, dll).
+- Untuk travel_plan, berikan 5-7 tempat yang terurut secara logis berdasarkan waktu dan jarak.
+- Untuk recommend_places, berikan 4-6 tempat rekomendasi.
+- Never output coordinates — the system geocodes everything.
+- DATA_JSON block must be at the very end of your response.
 """
 
         reply = chat_with_llama(data.message, system_prompt)
