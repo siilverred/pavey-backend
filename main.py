@@ -37,30 +37,13 @@ def root():
 
 @app.get("/debug-db")
 async def debug_db():
-    import httpx
     import os
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_SERVICE_KEY")
-    if not url or not key:
-        return {"error": "Missing env keys"}
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{url}/rest/v1/",
-                headers={"apikey": key, "Authorization": f"Bearer {key}"},
-                timeout=10.0
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                paths = data.get("paths", {})
-                rpc_paths = [p for p in paths.keys() if p.startswith("/rpc/")]
-                return {
-                    "tables": {table: list(schema.get("properties", {}).keys()) for table, schema in data.get("definitions", {}).items()},
-                    "rpc_functions": rpc_paths
-                }
-            return {"error": f"Status {resp.status_code}", "body": resp.text}
-    except Exception as e:
-        return {"error": str(e)}
+    return {
+        "url": url,
+        "key": key
+    }
 
 @app.get("/health")
 def health_check():
