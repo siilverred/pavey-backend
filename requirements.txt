@@ -9,6 +9,7 @@ Pillow
 apscheduler
 groq
 python-multipart
-# paddlepaddle
-# paddleocr
 beautifulsoup4
+paddlepaddle
+paddleocr
+opencv-python-headless

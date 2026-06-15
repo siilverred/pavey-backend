@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from services.supabase_client import supabase
-from services.gemini_service import analyze_image
+from services.paddleocr_service import extract_text_from_image
 from services.llama_service import chat_with_llama
 from services.exchange_service import get_rate_from_idr
 from middleware.auth_middleware import get_current_user
@@ -10,6 +11,21 @@ import json
 import re
 
 router = APIRouter()
+
+# Auth opsional untuk scan — guest boleh scan, tapi DB save hanya kalau login
+_receipt_security = HTTPBearer(auto_error=False)
+
+def _get_optional_receipt_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(_receipt_security)):
+    """Return user jika ada token valid, None jika guest."""
+    if not credentials:
+        return None
+    try:
+        user = supabase.auth.get_user(credentials.credentials)
+        if user and user.user:
+            return user.user
+    except Exception:
+        pass
+    return None
 
 
 # ── Enums untuk dropdown di Swagger ────────────────────────────────────────
@@ -124,24 +140,39 @@ async def scan_receipt(
     target_currency: Optional[TargetCurrency] = Form(None),
     # Translate
     target_language: Optional[TargetLanguage] = Form(None),
-    current_user = Depends(get_current_user)
+    current_user = Depends(_get_optional_receipt_user)
 ):
     try:
         image_bytes = await file.read()
 
-        # ── STEP 1: Extract receipt (selalu dilakukan dulu) ─────────────────
-        extract_prompt = """You are a precise receipt OCR system for a financial management app.
-Extract ALL items from this receipt image into a strict JSON format.
-Return ONLY valid JSON. No explanation, no markdown, no code blocks.
+        # ── STEP 1: Extract teks dari gambar pakai PaddleOCR ────────────────
+        try:
+            raw_text = extract_text_from_image(image_bytes)
+        except RuntimeError as ocr_err:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Gagal membaca gambar: {str(ocr_err)}"
+            )
+
+        if not raw_text.strip():
+            return {"error": "Struk tidak terbaca — coba foto lebih jelas"}
+
+        print(f"[Receipt] PaddleOCR extracted text:\n{raw_text[:500]}")
+
+        # ── STEP 2: Parse teks OCR jadi JSON terstruktur pakai LLM ───────────
+        extract_system_prompt = """You are a precise receipt parser for a financial management app.
+You receive raw OCR text extracted from a receipt image.
+Parse ALL items and return ONLY valid JSON. No explanation, no markdown, no code blocks.
 
 CRITICAL NUMBER RULES:
 - NO thousand separators: write 177500 NOT 177,500
 - NO currency symbols in numbers
 - All prices as plain integers
+- If a price appears as "45.000" (Indonesian format) treat it as 45000
 
-Required format:
+Required JSON format:
 {
-    "merchant_name": "store name",
+    "merchant_name": "store name from receipt",
     "date": "YYYY-MM-DD or null",
     "currency_detected": "IDR",
     "items": [
@@ -163,14 +194,14 @@ Required format:
 }
 
 Rules:
-- item_id starts from 1, sequential, used for split bill checkbox mapping
-- Separate EVERY item individually, never combine different items
+- item_id starts from 1, sequential
+- Separate EVERY item individually
 - subtotal = sum of all total_item_price
 - grand_total = final amount paid
-- If receipt cannot be read: {"error": "Struk tidak terbaca"}"""
+- If text is unreadable or not a receipt: {"error": "Struk tidak terbaca"}"""
 
-        result_text = await analyze_image(image_bytes, extract_prompt)
-        print(f"[Receipt] Raw OCR response: {repr(result_text)}")
+        result_text = chat_with_llama(raw_text, extract_system_prompt)
+        print(f"[Receipt] LLM parse response: {repr(result_text[:300])}")
 
         base_result = try_parse_json(result_text)
 
@@ -245,8 +276,8 @@ Rules:
                     "currency": currency
                 }
 
-                # Simpan expense per orang ke DB kalau ada trip_id
-                if trip_id:
+                # Simpan expense per orang ke DB kalau ada trip_id dan user login
+                if trip_id and current_user:
                     for person, bill in person_bills.items():
                         if bill["total"] > 0:
                             try:
@@ -370,7 +401,7 @@ Required format:
                 }
 
         # ── STEP 5: Simpan ke expenses (extract biasa) ──────────────────────
-        if function == ReceiptFunction.extract and trip_id and not base_result.get("error"):
+        if function == ReceiptFunction.extract and trip_id and current_user and not base_result.get("error"):
             try:
                 supabase.table("expenses").insert({
                     "user_id": current_user.id,
