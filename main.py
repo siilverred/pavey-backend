@@ -39,21 +39,12 @@ def root():
 def debug_db():
     from services.supabase_client import supabase
     res = {}
-    try:
-        t = supabase.table("trips").select("*").limit(1).execute()
-        res["trips"] = list(t.data[0].keys()) if t.data else "empty"
-    except Exception as e:
-        res["trips_error"] = str(e)
-    try:
-        ex = supabase.table("expenses").select("*").limit(1).execute()
-        res["expenses"] = list(ex.data[0].keys()) if ex.data else "empty"
-    except Exception as e:
-        res["expenses_error"] = str(e)
-    try:
-        pref = supabase.table("user_preferences").select("*").limit(1).execute()
-        res["user_preferences"] = list(pref.data[0].keys()) if pref.data else "empty"
-    except Exception as e:
-        res["user_preferences_error"] = str(e)
+    for table_name in ["trips", "expenses", "user_preferences", "chatbot_messages", "chat_history", "messages", "conversations"]:
+        try:
+            t = supabase.table(table_name).select("*").limit(1).execute()
+            res[table_name] = list(t.data[0].keys()) if t.data else "exists (empty)"
+        except Exception as e:
+            res[table_name] = f"error: {str(e)}"
     return res
 
 @app.get("/health")
