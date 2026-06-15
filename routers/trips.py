@@ -214,31 +214,42 @@ async def complete_trip(
 
         # Cek apakah user sudah punya preferences sebelumnya
         existing = supabase.table("user_preferences")\
-            .select("id")\
+            .select("id, vibe_history")\
             .eq("user_id", current_user.id)\
             .execute()
 
+        # Gabungkan vibe baru dengan data preferences yang ada
+        vibe_history = {"vibes": [t["vibe"]], "chats": {}}
+        if existing.data and existing.data[0].get("vibe_history"):
+            existing_vh = existing.data[0]["vibe_history"]
+            if isinstance(existing_vh, dict):
+                if "chats" in existing_vh or "vibes" in existing_vh:
+                    vibe_history["chats"] = existing_vh.get("chats") or {}
+                    existing_vibes = existing_vh.get("vibes") or []
+                    if isinstance(existing_vibes, list):
+                        vibe_history["vibes"] = list(set(existing_vibes + [t["vibe"]]))
+                    else:
+                        vibe_history["vibes"] = [t["vibe"]]
+                else:
+                    vibe_history["chats"] = existing_vh
+                    vibe_history["vibes"] = [t["vibe"]]
+            elif isinstance(existing_vh, list):
+                vibe_history["vibes"] = list(set(existing_vh + [t["vibe"]]))
+
         pref_data = {
             "user_id": current_user.id,
-            "vibe": t["vibe"],
-            "budget_min": t["budget_min"],
-            "budget_max": t["budget_max"],
+            "vibe_history": vibe_history,
+            "budget_min": int(t["budget_min"]) if isinstance(t["budget_min"], (int, float, str)) and str(t["budget_min"]).isdigit() else 0,
+            "budget_max": int(t["budget_max"]) if isinstance(t["budget_max"], (int, float, str)) and str(t["budget_max"]).isdigit() else 0,
             "destination_type": t.get("destination_type", "mixed"),
             "visited_places": visited_places,
             "updated_at": "now()"
         }
 
-        if existing.data:
-            # Update preferences yang udah ada
-            supabase.table("user_preferences")\
-                .update(pref_data)\
-                .eq("user_id", current_user.id)\
-                .execute()
-        else:
-            # Insert preferences baru
-            supabase.table("user_preferences")\
-                .insert(pref_data)\
-                .execute()
+        # Gunakan upsert dengan on_conflict="user_id" untuk menyederhanakan insert/update
+        supabase.table("user_preferences")\
+            .upsert(pref_data, on_conflict="user_id")\
+            .execute()
 
         # Update status trip jadi completed
         supabase.table("trips")\
@@ -267,7 +278,7 @@ async def get_user_preferences(
 ):
     try:
         prefs = supabase.table("user_preferences")\
-            .select("vibe, budget_min, budget_max, destination_type, visited_places, updated_at")\
+            .select("vibe_history, budget_min, budget_max, destination_type, visited_places, updated_at")\
             .eq("user_id", current_user.id)\
             .single()\
             .execute()
@@ -278,10 +289,28 @@ async def get_user_preferences(
                 "message": "Belum ada histori preferensi"
             }
 
+        p = prefs.data
+        vibe_list = []
+        vh = p.get("vibe_history")
+        if isinstance(vh, dict):
+            vibe_list = vh.get("vibes") or []
+        elif isinstance(vh, list):
+            vibe_list = vh
+            
+        vibe = vibe_list[-1] if vibe_list else None
+
+        # Return format expected by caller
         return {
             "has_history": True,
-            "preferences": prefs.data
+            "preferences": {
+                "vibe": vibe,
+                "budget_min": p.get("budget_min"),
+                "budget_max": p.get("budget_max"),
+                "destination_type": p.get("destination_type"),
+                "visited_places": p.get("visited_places") or [],
+                "updated_at": p.get("updated_at")
+            }
         }
 
     except Exception as e:
-        return {"has_history": False, "message": "Belum ada histori preferensi"}
+        return {"has_history": False, "message": f"Belum ada histori preferensi: {str(e)}"}

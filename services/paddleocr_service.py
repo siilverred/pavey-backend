@@ -24,11 +24,10 @@ def _get_ocr():
             from paddleocr import PaddleOCR
             logger.info("[PaddleOCR] Initializing model (may download on first run)...")
             _ocr_instance = PaddleOCR(
-                use_angle_cls=True,   # deteksi rotasi teks
-                lang="en",            # bahasa English + numerik (cocok untuk struk)
-                use_gpu=False,        # CPU mode untuk HuggingFace free tier
-                show_log=False,       # matikan verbose log PaddlePaddle
-                enable_mkldnn=False,  # disable MKL-DNN (lebih stabil di Docker)
+                use_textline_orientation=True,  # deteksi rotasi teks
+                lang="en",                      # bahasa English + numerik (cocok untuk struk)
+                device="cpu",                   # CPU mode untuk HuggingFace free tier
+                enable_mkldnn=False,            # disable MKL-DNN (lebih stabil di Docker)
             )
             logger.info("[PaddleOCR] Model ready.")
         except ImportError:
