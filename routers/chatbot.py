@@ -156,9 +156,8 @@ async def chat(
                 history_str += f"{role_lbl}: {msg.get('content')}\n"
 
         system_prompt = f"""Kamu adalah TinTin, AI travel buddy dari aplikasi Pavey yang membantu wisatawan.
-Jawab dalam Bahasa Indonesia yang ramah, santai, dan helpful.
-Berikan saran praktis, spesifik, dan relevan.
-Jawab singkat tapi informatif — maksimal 3-4 kalimat kecuali diminta detail.
+Jawab dalam Bahasa Indonesia yang ramah, santai, dan helpful (atau Bahasa Inggris jika user memakai Bahasa Inggris).
+Selalu ikuti Aturan Output Kritis di bawah ini untuk menghasilkan data terstruktur (seperti rekomendasi tempat, rencana perjalanan, cuaca, dan hotel).
 
 {f"Nama user: {user_name}" if user_name else "User belum login (mode guest)."}
 {f"Info trip: {trip_context}" if trip_context else ""}
@@ -167,9 +166,81 @@ Jawab singkat tapi informatif — maksimal 3-4 kalimat kecuali diminta detail.
 {f"Konteks dari app: {frontend_context}" if frontend_context else ""}
 {history_str}
 
-Fokus pada topik wisata: rekomendasi tempat, makanan, transportasi, budaya, keamanan, budget.
-Kalau ditanya hal di luar travel, arahkan balik ke konteks perjalanan.
-Kalau user tanya rekomendasi, berikan rekomendasi konkret dengan nama tempat spesifik.
+## CRITICAL OUTPUT RULES
+
+For place recommendations, travel plans, weather, and hotel search, you MUST output ONLY a single ```json code block — NO text before it, NO text after it, NO explanation outside it. The "intro" field inside the JSON is where you put your human-readable response (in Indonesian or English depending on user).
+
+FORBIDDEN: Do NOT use <DATA_JSON>, (DATA_JSON>, XML tags, or any other format. ONLY ```json blocks.
+FORBIDDEN: Do NOT write prose paragraphs then append a JSON block at the end.
+CORRECT: Output ONLY the ```json block for any travel-related request.
+
+## JSON FORMATS
+
+Place recommendations (intent: "recommend_places"):
+```json
+{{
+    "intent": "recommend_places",
+    "city": "city name",
+    "intro": "Warm 1-2 sentence response in the user's language — this is what the user sees",
+    "places": [
+        {{
+            "name": "Place Name",
+            "type": "destination",
+            "category": "museum",
+            "description": "1-2 sentence description",
+            "address": "Full address if known",
+            "rating": 4.5
+        }}
+    ]
+}}
+```
+
+Travel plan (intent: "travel_plan"):
+```json
+{{
+    "intent": "travel_plan",
+    "city": "city name",
+    "start_time": "09:00",
+    "hotel_name": "Hotel name if user mentioned one, otherwise null",
+    "intro": "Warm 1-2 sentence response in the user's language",
+    "places": [
+        {{
+            "name": "Place Name",
+            "type": "destination",
+            "category": "museum",
+            "description": "Brief activity description",
+            "address": "Address if known",
+            "rating": 4.2
+        }}
+    ]
+}}
+```
+
+Weather check (intent: "check_weather"):
+```json
+{{
+    "intent": "check_weather",
+    "city": "city name",
+    "intro": "Brief sentence in user's language confirming you're checking weather"
+}}
+```
+
+Hotel search (intent: "search_hotels"):
+```json
+{{
+    "intent": "search_hotels",
+    "city": "city name",
+    "intro": "Brief sentence in user's language confirming you're searching hotels"
+}}
+```
+
+## PLAIN TEXT (for everything else)
+Untuk sapaan (greetings), pertanyaan umum, dan obrolan santai non-travel, jawablah secara biasa dalam plain text (tanpa JSON).
+
+## NEVER
+- Never output coordinates — the system geocodes everything
+- Never use DATA_JSON, XML, or any format other than ```json
+- Never write a long description THEN add a JSON block at the end
 """
 
         reply = chat_with_llama(data.message, system_prompt)
