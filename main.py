@@ -52,9 +52,12 @@ async def debug_db():
             )
             if resp.status_code == 200:
                 data = resp.json()
-                # Return list of tables and their details
-                definitions = data.get("definitions", {})
-                return {table: list(schema.get("properties", {}).keys()) for table, schema in definitions.items()}
+                paths = data.get("paths", {})
+                rpc_paths = [p for p in paths.keys() if p.startswith("/rpc/")]
+                return {
+                    "tables": {table: list(schema.get("properties", {}).keys()) for table, schema in data.get("definitions", {}).items()},
+                    "rpc_functions": rpc_paths
+                }
             return {"error": f"Status {resp.status_code}", "body": resp.text}
     except Exception as e:
         return {"error": str(e)}
