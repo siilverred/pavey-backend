@@ -39,7 +39,7 @@ def root():
 def debug_db():
     from services.supabase_client import supabase
     res = {}
-    for table_name in ["trips", "expenses", "user_preferences", "chatbot_messages", "chat_history", "messages", "conversations"]:
+    for table_name in ["trips", "expenses", "user_preferences", "itinerary_items", "saved_places", "itineraries", "chat_logs", "user_chats", "bot_history"]:
         try:
             t = supabase.table(table_name).select("*").limit(1).execute()
             res[table_name] = list(t.data[0].keys()) if t.data else "exists (empty)"
