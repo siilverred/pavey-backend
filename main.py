@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.security import HTTPBearer
-from routers import auth, trips, weather, wallet, chatbot, receipt, social_parser
+from routers import auth, trips, weather, wallet, chatbot, receipt
 from scheduler.morning_briefing import start_scheduler
 
 security = HTTPBearer()
@@ -29,7 +29,6 @@ app.include_router(weather.router, prefix="/weather", tags=["Weather"])
 app.include_router(wallet.router, prefix="/wallet", tags=["Wallet"])
 app.include_router(chatbot.router, prefix="/chatbot", tags=["Chatbot"])
 app.include_router(receipt.router, prefix="/receipt", tags=["Receipt"])
-app.include_router(social_parser.router, prefix="/social", tags=["Social Parser"])
 
 @app.get("/")
 def root():
