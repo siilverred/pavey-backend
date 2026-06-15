@@ -19,9 +19,10 @@ class OnboardingSave(BaseModel):
 @router.post("/register")
 async def register(data: AuthRequest):
     try:
-        res = supabase.auth.sign_up({
+        res = supabase.auth.admin.create_user({
             "email": data.email,
-            "password": data.password
+            "password": data.password,
+            "email_confirm": True
         })
         if res and res.user:
             try:
