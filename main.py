@@ -36,16 +36,28 @@ def root():
     return {"status": "Pavey API is running", "version": "1.0.0"}
 
 @app.get("/debug-db")
-def debug_db():
-    from services.supabase_client import supabase
-    res = {}
-    for table_name in ["trips", "expenses", "user_preferences", "itinerary_items", "saved_places", "itineraries", "chat_logs", "user_chats", "bot_history"]:
-        try:
-            t = supabase.table(table_name).select("*").limit(1).execute()
-            res[table_name] = list(t.data[0].keys()) if t.data else "exists (empty)"
-        except Exception as e:
-            res[table_name] = f"error: {str(e)}"
-    return res
+async def debug_db():
+    import httpx
+    import os
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        return {"error": "Missing env keys"}
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{url}/rest/v1/",
+                headers={"apikey": key, "Authorization": f"Bearer {key}"},
+                timeout=10.0
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                # Return list of tables and their details
+                definitions = data.get("definitions", {})
+                return {table: list(schema.get("properties", {}).keys()) for table, schema in definitions.items()}
+            return {"error": f"Status {resp.status_code}", "body": resp.text}
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.get("/health")
 def health_check():
