@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from services.supabase_client import supabase
+from middleware.auth_middleware import get_current_user
 
 router = APIRouter()
 
@@ -41,3 +42,11 @@ async def logout():
         return {"message": "Logout berhasil"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/me")
+async def get_me(current_user = Depends(get_current_user)):
+    return {
+        "user_id": current_user.id,
+        "email": current_user.email,
+        "name": current_user.user_metadata.get("full_name", current_user.email.split("@")[0])
+    }
