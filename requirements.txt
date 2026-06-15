@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+supabase
+python-dotenv
+python-jose[cryptography]
+httpx
+google-generativeai
+Pillow
+apscheduler
+groq
+python-multipart
+# paddlepaddle
+# paddleocr
+beautifulsoup4
