@@ -35,6 +35,27 @@ app.include_router(social_parser.router, prefix="/social", tags=["Social Parser"
 def root():
     return {"status": "Pavey API is running", "version": "1.0.0"}
 
+@app.get("/debug-db")
+def debug_db():
+    from services.supabase_client import supabase
+    res = {}
+    try:
+        t = supabase.table("trips").select("*").limit(1).execute()
+        res["trips"] = list(t.data[0].keys()) if t.data else "empty"
+    except Exception as e:
+        res["trips_error"] = str(e)
+    try:
+        ex = supabase.table("expenses").select("*").limit(1).execute()
+        res["expenses"] = list(ex.data[0].keys()) if ex.data else "empty"
+    except Exception as e:
+        res["expenses_error"] = str(e)
+    try:
+        pref = supabase.table("user_preferences").select("*").limit(1).execute()
+        res["user_preferences"] = list(pref.data[0].keys()) if pref.data else "empty"
+    except Exception as e:
+        res["user_preferences_error"] = str(e)
+    return res
+
 @app.get("/health")
 def health_check():
     """Cek status semua service — tidak perlu auth."""
