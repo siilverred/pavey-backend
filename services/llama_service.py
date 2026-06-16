@@ -28,8 +28,7 @@ def chat_with_llama(message: str, system_prompt: str = "") -> str:
                 {"role": "user", "content": message}
             ],
             max_tokens=1024,
-            temperature=0.1,
-            response_format={"type": "json_object"}
+            temperature=0.7
         )
         return response.choices[0].message.content
     except Exception as e:
