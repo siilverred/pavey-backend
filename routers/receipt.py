@@ -371,6 +371,63 @@ def translate_items_local(items: list, target_lang: str) -> list:
         ]
 
 
+def parse_receipt_with_llm(raw_text: str) -> dict:
+    """
+    Parse hasil OCR mentah menggunakan LLM (Llama-3.1 via Groq) untuk memisahkan nama item,
+    jumlah, harga, dan menghapus metadata seperti nomor meja, ID transaksi, dll.
+    Jika gagal/error, fallback ke parser regex lokal.
+    """
+    try:
+        from services.llama_service import chat_with_llama
+        system_prompt = (
+            "You are a receipt parsing assistant. Parse the raw OCR text of a receipt into a structured JSON object. "
+            "You MUST return ONLY a JSON object matching this schema:\n"
+            "{\n"
+            "  \"merchant_name\": \"string or null\",\n"
+            "  \"date\": \"string (YYYY-MM-DD) or null\",\n"
+            "  \"currency_detected\": \"string (e.g. IDR, USD, SGD) or null\",\n"
+            "  \"items\": [\n"
+            "    {\n"
+            "      \"item_id\": integer,\n"
+            "      \"item_name\": \"string\",\n"
+            "      \"quantity\": integer,\n"
+            "      \"price_per_item\": integer,\n"
+            "      \"total_item_price\": integer\n"
+            "    }\n"
+            "  ],\n"
+            "  \"totals\": {\n"
+            "    \"subtotal\": integer,\n"
+            "    \"tax\": integer,\n"
+            "    \"service_charge\": integer,\n"
+            "    \"discount\": integer,\n"
+            "    \"grand_total\": integer\n"
+            "  }\n"
+            "}\n\n"
+            "Guidelines:\n"
+            "1. Filter out receipt metadata (like table numbers, cashier name, reference numbers, transaction IDs, tax ID numbers, credit card numbers, WiFi passwords) from the items list.\n"
+            "2. Align item names with their correct prices, especially if they are printed on separate lines. For example, if '1 Genmaicha Hot' is followed by '4,800' on the next line, they belong together as a single item with price 4800 and quantity 1.\n"
+            "3. Do not include 'Subtotal', 'Tax', 'Service charge', 'PB1', or 'Total' as items in the items list. Put them in the totals object instead.\n"
+            "4. For quantities, try to extract them if visible (e.g. '6 Yellow' means quantity 6, item_name 'Yellow', price_per_item is total_item_price / quantity).\n"
+            "5. Convert prices to clean integers (no dots, commas, or currency symbols). If the currency is IDR, ensure the price reflects the full amount (e.g. 153,600 -> 153600).\n"
+            "6. Make sure the sum of items total_item_price does not double count totals."
+        )
+        
+        result_str = chat_with_llama(raw_text, system_prompt)
+        result = json.loads(result_str)
+        
+        if "merchant_name" not in result:
+            result["merchant_name"] = "Unknown"
+        if "items" not in result:
+            result["items"] = []
+        if "totals" not in result:
+            result["totals"] = {"subtotal": 0, "tax": 0, "service_charge": 0, "discount": 0, "grand_total": 0}
+            
+        return result
+    except Exception as e:
+        print(f"[Receipt] LLM parsing failed: {e}. Falling back to regex parser.")
+        return parse_receipt_from_ocr(raw_text)
+
+
 # ── Main endpoint ─────────────────────────────────────────────────────────────
 @router.post("/scan")
 async def scan_receipt(
@@ -400,8 +457,8 @@ async def scan_receipt(
 
         print(f"[Receipt] OCR text ({len(raw_text)} chars):\n{raw_text[:400]}")
 
-        # ── STEP 2: Parse hasil OCR → JSON (pure Python, tanpa LLM) ─────────
-        base_result = parse_receipt_from_ocr(raw_text)
+        # ── STEP 2: Parse hasil OCR → JSON (menggunakan LLM dengan fallback) ─────────
+        base_result = parse_receipt_with_llm(raw_text)
 
         if base_result.get("error"):
             return base_result

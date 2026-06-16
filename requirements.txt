@@ -7,7 +7,7 @@ httpx
 google-generativeai
 Pillow
 apscheduler
-groq
+groq>=1.4.0
 python-multipart
 beautifulsoup4
 paddleocr
