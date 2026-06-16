@@ -3,6 +3,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.security import HTTPBearer
+
+# MONKEY PATCH: SINKRONISASI HTTPX 0.28.0+ DENGAN SDK GROQ
+import groq
+from groq._base_client import SyncHttpxClientWrapper
+
+class CustomGroqHttpxClientWrapper(SyncHttpxClientWrapper):
+    def __init__(self, *args, **kwargs):
+        kwargs.pop("proxies", None)
+        super().__init__(*args, **kwargs)
+
+groq._base_client.SyncHttpxClientWrapper = CustomGroqHttpxClientWrapper
+
 from routers import auth, trips, weather, wallet, chatbot, receipt, social_parser, saved_places
 from scheduler.morning_briefing import start_scheduler
 

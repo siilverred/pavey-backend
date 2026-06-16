@@ -4,10 +4,18 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from services.supabase_client import supabase
 from middleware.auth_middleware import get_current_user
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 router = APIRouter()
+
+class GuestPlanRequest(BaseModel):
+    city: str
+    vibe: str
+    budget: int
+    days: int
+    arrival_time: Optional[str] = "09:00"
+    departure_time: Optional[str] = "14:00"
 
 class TripCreate(BaseModel):
     destination: str
@@ -94,6 +102,52 @@ async def get_itinerary(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/generate-plan")
+async def generate_guest_plan(data: GuestPlanRequest):
+    try:
+        ai_core_url = os.getenv("AI_CORE_URL", "http://localhost:8080")
+        all_itinerary_list = []
+        current_date = datetime.now()
+        
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            for day in range(1, data.days + 1):
+                start_datetime_str = f"{current_date.strftime('%Y-%m-%d')}T{data.arrival_time}:00"
+                ai_response = await client.post(
+                    f"{ai_core_url}/api/v1/generate-itinerary",
+                    json={
+                        "city": data.city,
+                        "preference": data.vibe,
+                        "num_places": 4 if day > 1 else 5,
+                        "start_datetime": start_datetime_str,
+                        "duration_per_place": [60],
+                        "place_type": "all",
+                        "price_level": None
+                    }
+                )
+                if ai_response.status_code != 200:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"AI Core error on day {day}: {ai_response.text}"
+                    )
+                
+                day_data = ai_response.json()
+                day_itin = day_data.get("itinerary", [])
+                for item in day_itin:
+                    item["day_number"] = day
+                
+                all_itinerary_list.extend(day_itin)
+                current_date += timedelta(days=1)
+                
+        return {
+            "status": "success",
+            "city": data.city,
+            "itinerary": all_itinerary_list
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/{trip_id}/generate")
 async def generate_itinerary(
     trip_id: str,
@@ -113,33 +167,40 @@ async def generate_itinerary(
         t = trip.data
         ai_core_url = os.getenv("AI_CORE_URL", "http://localhost:8080")
 
-        # Bangun start_datetime dari start_date trip, default jam 09:00
-        start_datetime_str = f"{t['start_date']}T09:00:00"
+        # Parse start and end date to get number of days
+        start_date = datetime.strptime(t["start_date"], "%Y-%m-%d")
+        end_date = datetime.strptime(t["end_date"], "%Y-%m-%d")
+        num_days = (end_date - start_date).days + 1
+        num_days = max(1, min(num_days, 10)) # clamp to dynamic range
+
+        all_itinerary_list = []
+        weather_modes = []
+        current_date = start_date
 
         async with httpx.AsyncClient(timeout=120.0) as client:
-            ai_response = await client.post(
-                f"{ai_core_url}/api/v1/generate-itinerary",
-                json={
-                    "city": t["destination"],
-                    "preference": t["vibe"],
-                    "num_places": 5,
-                    "start_datetime": start_datetime_str,
-                    "duration_per_place": [60],
-                    "place_type": "all",
-                    "price_level": None
-                }
-            )
-
-        if ai_response.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail=f"AI Core error: {ai_response.text}"
-            )
-
-        itinerary_data = ai_response.json()
-
-        # AI Core return {"status": "success", "itinerary": [...], "weather_mode": "..."}
-        itinerary_list = itinerary_data.get("itinerary", [])
+            for day in range(1, num_days + 1):
+                start_datetime_str = f"{current_date.strftime('%Y-%m-%d')}T09:00:00"
+                ai_response = await client.post(
+                    f"{ai_core_url}/api/v1/generate-itinerary",
+                    json={
+                        "city": t["destination"],
+                        "preference": t["vibe"],
+                        "num_places": 4 if day > 1 else 5,
+                        "start_datetime": start_datetime_str,
+                        "duration_per_place": [60],
+                        "place_type": "all",
+                        "price_level": None
+                    }
+                )
+                if ai_response.status_code == 200:
+                    day_data = ai_response.json()
+                    day_itin = day_data.get("itinerary", [])
+                    for item in day_itin:
+                        item["day_number"] = day
+                    all_itinerary_list.extend(day_itin)
+                    if day_data.get("weather_mode"):
+                        weather_modes.append(day_data["weather_mode"])
+                current_date += timedelta(days=1)
 
         supabase.table("itinerary_items")\
             .delete()\
@@ -147,10 +208,10 @@ async def generate_itinerary(
             .execute()
 
         items_to_insert = []
-        for item in itinerary_list:
+        for item in all_itinerary_list:
             items_to_insert.append({
                 "trip_id": trip_id,
-                "day_number": 1,
+                "day_number": item.get("day_number", 1),
                 "order_index": item.get("step", 0),
                 "place_name": item.get("name", ""),
                 "place_type": item.get("type", "destination"),
@@ -171,8 +232,8 @@ async def generate_itinerary(
         return {
             "message": "Itinerary berhasil digenerate",
             "trip_id": trip_id,
-            "weather_mode": itinerary_data.get("weather_mode", ""),
-            "itinerary": itinerary_list
+            "weather_mode": weather_modes[0] if weather_modes else "Standard (Clear)",
+            "itinerary": all_itinerary_list
         }
 
     except HTTPException:
