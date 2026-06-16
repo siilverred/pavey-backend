@@ -27,16 +27,17 @@ def _get_ocr():
         from paddleocr import PaddleOCR
         logger.info("[OCR] Initializing PaddleOCR model...")
         
-        # Try to initialize with parameters compatible with PaddleOCR v3 / PaddleX
-        try:
+        # Inspect PaddleOCR signature to safely choose parameters and avoid double instantiation error
+        import inspect
+        sig = inspect.signature(PaddleOCR.__init__)
+        if 'use_textline_orientation' in sig.parameters:
             _ocr_instance = PaddleOCR(
                 use_textline_orientation=False,
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 lang='en'
             )
-        except Exception:
-            # Fallback for traditional PaddleOCR versions
+        else:
             _ocr_instance = PaddleOCR(use_angle_cls=True, lang='en')
 
         logger.info("[OCR] PaddleOCR model ready.")
