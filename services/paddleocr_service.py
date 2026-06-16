@@ -16,12 +16,15 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 _ocr_instance = None
+_ocr_init_error = None
 
 
 def _get_ocr():
-    global _ocr_instance
+    global _ocr_instance, _ocr_init_error
     if _ocr_instance is not None:
         return _ocr_instance
+    if _ocr_init_error is not None:
+        raise RuntimeError(f"PaddleOCR init sebelumnya gagal: {_ocr_init_error}")
 
     try:
         from paddleocr import PaddleOCR
@@ -42,12 +45,15 @@ def _get_ocr():
 
         logger.info("[OCR] PaddleOCR model ready.")
         return _ocr_instance
-    except ImportError:
+    except ImportError as e:
+        _ocr_init_error = f"ImportError: {str(e)}"
         raise RuntimeError(
             "PaddleOCR tidak terinstall. Jalankan: pip install paddleocr paddlepaddle"
         )
     except Exception as e:
-        raise RuntimeError(f"PaddleOCR init gagal: {str(e)}")
+        import traceback
+        _ocr_init_error = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+        raise RuntimeError(f"PaddleOCR init gagal: {_ocr_init_error}")
 
 
 def extract_text_from_image(image_bytes: bytes) -> str:
