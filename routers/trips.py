@@ -209,16 +209,37 @@ async def generate_itinerary(
 
         items_to_insert = []
         for item in all_itinerary_list:
+            # Calculate end_time from start_time + duration
+            start_time_str = item.get("arrival_time", "09:00")
+            duration_min = item.get("duration_spent_minutes", 60)
+            try:
+                from datetime import datetime, timedelta
+                st = datetime.strptime(start_time_str, "%H:%M")
+                et = (st + timedelta(minutes=duration_min)).strftime("%H:%M")
+            except Exception:
+                et = start_time_str
+
+            # Store rich metadata (lat/lng, rating, activity) in notes as JSON
+            import json as _json
+            notes_data = _json.dumps({
+                "activity": item.get("activity_todo", ""),
+                "latitude": item.get("latitude"),
+                "longitude": item.get("longitude"),
+                "rating": item.get("rating"),
+                "total_reviews": item.get("total_reviews"),
+                "duration_minutes": duration_min,
+            })
+
             items_to_insert.append({
                 "trip_id": trip_id,
                 "day_number": item.get("day_number", 1),
                 "order_index": item.get("step", 0),
                 "place_name": item.get("name", ""),
                 "place_type": item.get("type", "destination"),
-                "start_time": item.get("arrival_time", ""),
-                "duration_minutes": item.get("duration_spent_minutes", 60),
+                "start_time": start_time_str,
+                "end_time": et,
                 "travel_time_to_next": item.get("travel_time_to_next_minutes", 0),
-                "description": item.get("activity_todo", ""),
+                "notes": notes_data,
             })
 
         if items_to_insert:
