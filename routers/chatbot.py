@@ -116,8 +116,10 @@ async def chat(
                         .order("order_index")\
                         .execute()
                     if itin_res.data:
-                        stops = [f"- {it.get('place_name')} ({it.get('place_type')}, {it.get('start_time', '')})" for it in itin_res.data]
+                        stops = [f"- {it.get('place_name')} ({it.get('place_type')}, {it.get('start_time', '')})" for it in itin_res.data[:12]]
                         itinerary_context = "Itinerary:\n" + "\n".join(stops)
+                        if len(itin_res.data) > 12:
+                            itinerary_context += f"\n- (+{len(itin_res.data) - 12} destinasi lainnya)"
                 except Exception as e:
                     print(f"[Chatbot] Failed to load itinerary context: {e}")
 
@@ -135,6 +137,8 @@ async def chat(
 
         # Kalau ada context dari frontend (itinerary lokal), pakai itu
         frontend_context = data.context or ""
+        if len(frontend_context) > 1000:
+            frontend_context = frontend_context[:1000] + "..."
 
         user_name = ""
         if current_user:
@@ -150,10 +154,24 @@ async def chat(
         # Format past chat history
         history_str = ""
         if past_messages:
+            import json
             history_str = "\nPercakapan sebelumnya:\n"
-            for msg in past_messages[-10:]: # Ambil 10 pesan terakhir untuk konteks LLM
+            for msg in past_messages[-6:]: # Ambil 6 pesan terakhir (3 turn) untuk hemat token LLM
                 role_lbl = "User" if msg.get("role") == "user" else "TinTin"
-                history_str += f"{role_lbl}: {msg.get('content')}\n"
+                content = msg.get("content", "")
+                # Jika asisten merespons JSON, ambil intronya saja untuk menghemat token
+                if role_lbl == "TinTin" and content.strip().startswith("{"):
+                    try:
+                        parsed = json.loads(content)
+                        content = parsed.get("intro", content)
+                    except:
+                        pass
+                
+                # Batasi panjang string
+                if len(content) > 300:
+                    content = content[:300] + "..."
+                
+                history_str += f"{role_lbl}: {content}\n"
 
         system_prompt = f"""Kamu adalah TinTin, AI travel buddy dari aplikasi Pavey yang membantu wisatawan.
 Jawab dalam Bahasa Indonesia yang ramah, santai, dan helpful (atau Bahasa Inggris jika user memakai Bahasa Inggris).

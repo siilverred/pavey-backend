@@ -10,6 +10,5 @@ apscheduler
 groq
 python-multipart
 beautifulsoup4
-paddlepaddle
 paddleocr
-opencv-python-headless
+paddlepaddle
