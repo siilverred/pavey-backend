@@ -109,35 +109,36 @@ async def generate_guest_plan(data: GuestPlanRequest):
         all_itinerary_list = []
         current_date = datetime.now()
         
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            for day in range(1, data.days + 1):
-                start_datetime_str = f"{current_date.strftime('%Y-%m-%d')}T{data.arrival_time}:00"
-                ai_response = await client.post(
-                    f"{ai_core_url}/api/v1/generate-itinerary",
-                    json={
-                        "city": data.city,
-                        "preference": data.vibe,
-                        "num_places": 4 if day > 1 else 5,
-                        "start_datetime": start_datetime_str,
-                        "duration_per_place": [60],
-                        "place_type": "all",
-                        "price_level": None
-                    }
-                )
-                if ai_response.status_code != 200:
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"AI Core error on day {day}: {ai_response.text}"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                for day in range(1, data.days + 1):
+                    start_datetime_str = f"{current_date.strftime('%Y-%m-%d')}T{data.arrival_time}:00"
+                    ai_response = await client.post(
+                        f"{ai_core_url}/api/v1/generate-itinerary",
+                        json={
+                            "city": data.city,
+                            "preference": data.vibe,
+                            "num_places": 4 if day > 1 else 5,
+                            "start_datetime": start_datetime_str,
+                            "duration_per_place": [60],
+                            "place_type": "all",
+                            "price_level": None
+                        }
                     )
-                
-                day_data = ai_response.json()
-                day_itin = day_data.get("itinerary", [])
-                for item in day_itin:
-                    item["day_number"] = day
-                
-                all_itinerary_list.extend(day_itin)
-                current_date += timedelta(days=1)
-                
+                    if ai_response.status_code != 200:
+                        raise RuntimeError(f"AI Core status code {ai_response.status_code}")
+                    
+                    day_data = ai_response.json()
+                    day_itin = day_data.get("itinerary", [])
+                    for item in day_itin:
+                        item["day_number"] = day
+                    
+                    all_itinerary_list.extend(day_itin)
+                    current_date += timedelta(days=1)
+        except Exception as api_err:
+            print(f"[Trips API] AI Core connection failed or returned error: {api_err}. Running LLM fallback...")
+            all_itinerary_list = generate_fallback_itinerary(data.city, data.vibe, data.days, data.arrival_time)
+
         return {
             "status": "success",
             "city": data.city,
@@ -177,22 +178,25 @@ async def generate_itinerary(
         weather_modes = []
         current_date = start_date
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            for day in range(1, num_days + 1):
-                start_datetime_str = f"{current_date.strftime('%Y-%m-%d')}T09:00:00"
-                ai_response = await client.post(
-                    f"{ai_core_url}/api/v1/generate-itinerary",
-                    json={
-                        "city": t["destination"],
-                        "preference": t["vibe"],
-                        "num_places": 4 if day > 1 else 5,
-                        "start_datetime": start_datetime_str,
-                        "duration_per_place": [60],
-                        "place_type": "all",
-                        "price_level": None
-                    }
-                )
-                if ai_response.status_code == 200:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                for day in range(1, num_days + 1):
+                    start_datetime_str = f"{current_date.strftime('%Y-%m-%d')}T09:00:00"
+                    ai_response = await client.post(
+                        f"{ai_core_url}/api/v1/generate-itinerary",
+                        json={
+                            "city": t["destination"],
+                            "preference": t["vibe"],
+                            "num_places": 4 if day > 1 else 5,
+                            "start_datetime": start_datetime_str,
+                            "duration_per_place": [60],
+                            "place_type": "all",
+                            "price_level": None
+                        }
+                    )
+                    if ai_response.status_code != 200:
+                        raise RuntimeError(f"AI Core status code {ai_response.status_code}")
+                    
                     day_data = ai_response.json()
                     day_itin = day_data.get("itinerary", [])
                     for item in day_itin:
@@ -200,7 +204,10 @@ async def generate_itinerary(
                     all_itinerary_list.extend(day_itin)
                     if day_data.get("weather_mode"):
                         weather_modes.append(day_data["weather_mode"])
-                current_date += timedelta(days=1)
+                    current_date += timedelta(days=1)
+        except Exception as api_err:
+            print(f"[Trips API] AI Core connection failed or returned error: {api_err}. Running LLM fallback...")
+            all_itinerary_list = generate_fallback_itinerary(t["destination"], t["vibe"], num_days, "09:00")
 
         supabase.table("itinerary_items")\
             .delete()\
@@ -396,3 +403,89 @@ async def get_user_preferences(
 
     except Exception as e:
         return {"has_history": False, "message": f"Belum ada histori preferensi: {str(e)}"}
+
+
+def generate_fallback_itinerary(city: str, vibe: str, days: int, start_time: str = "09:00") -> list:
+    import json
+    import re
+    from services.llama_service import chat_with_llama
+    
+    prompt = f"""Kamu adalah asisten pembuat itinerary wisata untuk kota {city} dengan vibe {vibe} selama {days} hari.
+Buat rencana perjalanan terstruktur dalam format JSON yang valid.
+Masing-masing hari harus memiliki 3-4 tempat wisata/kuliner yang menarik.
+Pastikan koordinat latitude dan longitude realistis untuk kota {city}.
+
+Format output harus berupa sebuah objek JSON dengan key "itinerary" yang berisi array dari objek-objek dengan skema berikut:
+{{
+    "itinerary": [
+        {{
+            "name": "Nama Tempat Wisata/Restoran",
+            "type": "destination|restaurant|attraction",
+            "price": 0,
+            "rating": 4.5,
+            "latitude": -8.4,
+            "longitude": 115.1,
+            "activity_todo": "Aktivitas yang dilakukan di sini",
+            "duration_spent_minutes": 60,
+            "travel_time_to_next_minutes": 15,
+            "arrival_time": "09:00",
+            "step": 1,
+            "day_number": 1
+        }}
+    ]
+}}
+
+Kembalikan HANYA objek JSON tersebut. Jangan berikan teks penjelasan lain sebelum atau sesudah JSON.
+"""
+    try:
+        reply = chat_with_llama("Buat itinerary", prompt)
+        clean_reply = reply.strip()
+        if "```" in clean_reply:
+            match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', clean_reply)
+            if match:
+                clean_reply = match.group(1).strip()
+        
+        data = json.loads(clean_reply)
+        items = data.get("itinerary") or []
+        
+        # Format sekuensial jika ada info yang kurang
+        for day in range(1, days + 1):
+            day_items = [it for it in items if it.get("day_number") == day]
+            if not day_items:
+                continue
+            
+            cursor_min = 9 * 60  # start at 09:00
+            for idx, item in enumerate(day_items):
+                item["step"] = idx + 1
+                if "arrival_time" not in item:
+                    h = cursor_min // 60
+                    m = cursor_min % 60
+                    item["arrival_time"] = f"{h:02d}:{m:02d}"
+                duration = item.get("duration_spent_minutes", 60)
+                travel = item.get("travel_time_to_next_minutes", 15)
+                cursor_min += duration + travel
+                
+        return items
+    except Exception as e:
+        print(f"[Fallback Planner] Error: {e}. Using safety mock data.")
+        items = []
+        for d in range(1, days + 1):
+            times = ["09:00", "12:00", "15:00", "18:00"]
+            names = ["Taman Kota", "Kuliner Khas", "Museum Sejarah", "Restoran Malam"]
+            types = ["destination", "restaurant", "attraction", "restaurant"]
+            for idx in range(4):
+                items.append({
+                    "name": f"{names[idx]} {city}",
+                    "type": types[idx],
+                    "price": 0,
+                    "rating": 4.5,
+                    "latitude": -6.2 + (idx * 0.005),
+                    "longitude": 106.8 + (idx * 0.005),
+                    "activity_todo": f"Mengunjungi dan menikmati {names[idx]}",
+                    "duration_spent_minutes": 60 if types[idx] == "restaurant" else 90,
+                    "travel_time_to_next_minutes": 15,
+                    "arrival_time": times[idx],
+                    "step": idx + 1,
+                    "day_number": d
+                })
+        return items
