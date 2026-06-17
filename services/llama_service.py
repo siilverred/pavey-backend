@@ -20,18 +20,30 @@ def chat_with_llama(message: str, system_prompt: str = "", max_tokens: int = 102
     if len(message) > _MAX_INPUT_CHARS:
         message = message[:_MAX_INPUT_CHARS]
 
-    try:
-        groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-        response = client.chat.completions.create(
-            model=groq_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": message}
-            ],
-            max_tokens=max_tokens,
-            temperature=0.7
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        raise RuntimeError(f"LLM API error: {str(e)}")
+    # Models list to fallback on rate limit (429)
+    models = [
+        os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        "llama-3.1-8b-instant",
+        "gemma2-9b-it"
+    ]
+    last_err = None
+    for model in models:
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": message}
+                ],
+                max_tokens=max_tokens,
+                temperature=0.7
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            if "429" in str(e) or "rate_limit" in str(e).lower():
+                last_err = e
+                continue
+            raise RuntimeError(f"LLM API error: {str(e)}")
+
+    raise RuntimeError(f"All Groq models failed due to rate limits: {str(last_err)}")
 
