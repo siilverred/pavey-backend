@@ -21,8 +21,9 @@ def chat_with_llama(message: str, system_prompt: str = "", max_tokens: int = 102
         message = message[:_MAX_INPUT_CHARS]
 
     try:
+        groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model=groq_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message}

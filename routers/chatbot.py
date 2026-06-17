@@ -110,7 +110,7 @@ async def chat(
 
                 try:
                     itin_res = supabase.table("itinerary_items")\
-                        .select("place_name, place_type, start_time, description")\
+                        .select("place_name, place_type, start_time")\
                         .eq("trip_id", data.trip_id)\
                         .order("day_number")\
                         .order("order_index")\
