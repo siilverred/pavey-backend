@@ -423,7 +423,7 @@ Return ONLY a valid JSON object in this exact format, no other text:
 {{
     "itinerary": [
         {{
-            "name": "Exact real place name (e.g. 'Monas', 'Cafe Batavia', 'Kota Tua')",
+            "name": "Exact real place name specific to the requested city (e.g. 'Gedung Sate' for Bandung, 'Monas' for Jakarta, 'Borobudur' for Yogyakarta)",
             "type": "destination|restaurant|attraction",
             "price": 50000,
             "rating": 4.5,
