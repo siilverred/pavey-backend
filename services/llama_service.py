@@ -12,7 +12,7 @@ client = Groq(api_key=_groq_api_key) if _groq_api_key else None
 _MAX_INPUT_CHARS = 2000
 
 
-def chat_with_llama(message: str, system_prompt: str = "") -> str:
+def chat_with_llama(message: str, system_prompt: str = "", max_tokens: int = 1024) -> str:
     if not client:
         raise RuntimeError("GROQ_API_KEY tidak dikonfigurasi. Chatbot tidak tersedia.")
 
@@ -27,7 +27,7 @@ def chat_with_llama(message: str, system_prompt: str = "") -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message}
             ],
-            max_tokens=1024,
+            max_tokens=max_tokens,
             temperature=0.7
         )
         return response.choices[0].message.content

@@ -410,35 +410,43 @@ def generate_fallback_itinerary(city: str, vibe: str, days: int, start_time: str
     import re
     from services.llama_service import chat_with_llama
     
-    prompt = f"""Kamu adalah asisten pembuat itinerary wisata untuk kota {city} dengan vibe {vibe} selama {days} hari.
-Buat rencana perjalanan terstruktur dalam format JSON yang valid.
-Masing-masing hari harus memiliki 3-4 tempat wisata/kuliner yang menarik.
-Pastikan koordinat latitude dan longitude realistis untuk kota {city}.
+    prompt = f"""You are a travel itinerary expert. Create a {days}-day itinerary for {city} with a {vibe} vibe.
 
-Format output harus berupa sebuah objek JSON dengan key "itinerary" yang berisi array dari objek-objek dengan skema berikut:
+CRITICAL RULES:
+- Use REAL, SPECIFIC, WELL-KNOWN place names that actually exist in {city}. 
+- Do NOT use generic names like "City Park", "Local Cuisine", "History Museum", or templates like "Museum of {city}".
+- Include famous landmarks, popular restaurants, and known attractions specific to {city}.
+- Coordinates MUST be accurate for {city}. Do not use default 0,0 values.
+- Each day should have 4 places: morning attraction, lunch spot, afternoon attraction, dinner spot.
+
+Return ONLY a valid JSON object in this exact format, no other text:
 {{
     "itinerary": [
         {{
-            "name": "Nama Tempat Wisata/Restoran",
+            "name": "Exact real place name (e.g. 'Monas', 'Cafe Batavia', 'Kota Tua')",
             "type": "destination|restaurant|attraction",
-            "price": 0,
+            "price": 50000,
             "rating": 4.5,
-            "latitude": -8.4,
-            "longitude": 115.1,
-            "activity_todo": "Aktivitas yang dilakukan di sini",
-            "duration_spent_minutes": 60,
-            "travel_time_to_next_minutes": 15,
+            "latitude": 0.0,
+            "longitude": 0.0,
+            "activity_todo": "Specific activity description",
+            "duration_spent_minutes": 90,
+            "travel_time_to_next_minutes": 20,
             "arrival_time": "09:00",
             "step": 1,
             "day_number": 1
         }}
     ]
 }}
-
-Kembalikan HANYA objek JSON tersebut. Jangan berikan teks penjelasan lain sebelum atau sesudah JSON.
 """
     try:
-        reply = chat_with_llama("Buat itinerary", prompt)
+        # Scale max_tokens dynamically based on number of days (600 tokens/day, min 2048, max 4096)
+        max_tokens = min(4096, max(2048, days * 600))
+        reply = chat_with_llama(
+            message=prompt,
+            system_prompt="You are a travel itinerary expert. Respond only with a single valid JSON block.",
+            max_tokens=max_tokens
+        )
         clean_reply = reply.strip()
         if "```" in clean_reply:
             match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', clean_reply)
@@ -467,7 +475,9 @@ Kembalikan HANYA objek JSON tersebut. Jangan berikan teks penjelasan lain sebelu
                 
         return items
     except Exception as e:
-        print(f"[Fallback Planner] Error: {e}. Using safety mock data.")
+        raw_snippet = reply[:300] if 'reply' in locals() else 'None'
+        print(f"[Fallback Planner] Error: {e}. Raw reply snippet: {raw_snippet}")
+        print("[Fallback Planner] Using safety mock data.")
         items = []
         for d in range(1, days + 1):
             times = ["09:00", "12:00", "15:00", "18:00"]
