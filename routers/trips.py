@@ -110,7 +110,7 @@ async def generate_guest_plan(data: GuestPlanRequest):
         current_date = datetime.now()
         
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 for day in range(1, data.days + 1):
                     start_datetime_str = f"{current_date.strftime('%Y-%m-%d')}T{data.arrival_time}:00"
                     ai_response = await client.post(
@@ -121,12 +121,11 @@ async def generate_guest_plan(data: GuestPlanRequest):
                             "num_places": 4 if day > 1 else 5,
                             "start_datetime": start_datetime_str,
                             "duration_per_place": [60],
-                            "place_type": "all",
-                            "price_level": None
+                            "place_type": "all"
                         }
                     )
                     if ai_response.status_code != 200:
-                        raise RuntimeError(f"AI Core status code {ai_response.status_code}")
+                        raise RuntimeError(f"AI Core status code {ai_response.status_code}: {ai_response.text}")
                     
                     day_data = ai_response.json()
                     day_itin = day_data.get("itinerary", [])
@@ -179,7 +178,7 @@ async def generate_itinerary(
         current_date = start_date
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 for day in range(1, num_days + 1):
                     start_datetime_str = f"{current_date.strftime('%Y-%m-%d')}T09:00:00"
                     ai_response = await client.post(
@@ -190,12 +189,11 @@ async def generate_itinerary(
                             "num_places": 4 if day > 1 else 5,
                             "start_datetime": start_datetime_str,
                             "duration_per_place": [60],
-                            "place_type": "all",
-                            "price_level": None
+                            "place_type": "all"
                         }
                     )
                     if ai_response.status_code != 200:
-                        raise RuntimeError(f"AI Core status code {ai_response.status_code}")
+                        raise RuntimeError(f"AI Core status code {ai_response.status_code}: {ai_response.text}")
                     
                     day_data = ai_response.json()
                     day_itin = day_data.get("itinerary", [])
