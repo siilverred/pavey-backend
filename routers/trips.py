@@ -1,11 +1,13 @@
 import os
 import httpx
+import asyncio
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from services.supabase_client import supabase
 from middleware.auth_middleware import get_current_user
 from datetime import date, datetime, timedelta
-from typing import Optional
+from typing import Optional, List
+from services.google_places import enrich_place_details
 
 router = APIRouter()
 
@@ -103,6 +105,26 @@ async def get_itinerary(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+async def enrich_itinerary_items(itinerary_list: list, city: str):
+    if not itinerary_list:
+        return
+    tasks = []
+    for item in itinerary_list:
+        name = item.get("name")
+        if name:
+            tasks.append(enrich_place_details(name, city))
+        else:
+            tasks.append(asyncio.sleep(0, result={}))
+    results = await asyncio.gather(*tasks)
+    for item, enrichment in zip(itinerary_list, results):
+        if enrichment:
+            item["image"] = enrichment.get("image") or item.get("image")
+            item["cost"] = enrichment.get("cost") if enrichment.get("cost") is not None else item.get("cost", 0)
+            if enrichment.get("rating"):
+                item["rating"] = enrichment.get("rating")
+            if enrichment.get("total_reviews"):
+                item["total_reviews"] = enrichment.get("total_reviews")
+
 @router.post("/generate-plan")
 async def generate_guest_plan(data: GuestPlanRequest):
     try:
@@ -112,19 +134,22 @@ async def generate_guest_plan(data: GuestPlanRequest):
         
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
+                exclude_names = []
                 for day in range(1, data.days + 1):
                     start_datetime_str = f"{current_date.strftime('%Y-%m-%d')}T{data.arrival_time}:00"
+                    payload = {
+                        "city": data.city,
+                        "preference": data.vibe,
+                        "num_places": 4 if day > 1 else 5,
+                        "start_datetime": start_datetime_str,
+                        "duration_per_place": [60],
+                        "place_type": "all",
+                        "bypass_cache": data.bypass_cache,
+                        "exclude_names": exclude_names
+                    }
                     ai_response = await client.post(
                         f"{ai_core_url}/api/v1/generate-itinerary",
-                        json={
-                            "city": data.city,
-                            "preference": data.vibe,
-                            "num_places": 4 if day > 1 else 5,
-                            "start_datetime": start_datetime_str,
-                            "duration_per_place": [60],
-                            "place_type": "all",
-                            "bypass_cache": data.bypass_cache
-                        }
+                        json=payload
                     )
                     if ai_response.status_code != 200:
                         raise RuntimeError(f"AI Core status code {ai_response.status_code}: {ai_response.text}")
@@ -133,9 +158,14 @@ async def generate_guest_plan(data: GuestPlanRequest):
                     day_itin = day_data.get("itinerary", [])
                     for item in day_itin:
                         item["day_number"] = day
+                        if item.get("name"):
+                            exclude_names.append(item["name"])
                     
                     all_itinerary_list.extend(day_itin)
                     current_date += timedelta(days=1)
+            
+            # Enrich details from Google Places
+            await enrich_itinerary_items(all_itinerary_list, data.city)
         except Exception as api_err:
             print(f"[Trips API] AI Core connection failed or returned error: {api_err}. Running LLM fallback...")
             all_itinerary_list = generate_fallback_itinerary(data.city, data.vibe, data.days, data.arrival_time)
@@ -181,18 +211,21 @@ async def generate_itinerary(
 
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
+                exclude_names = []
                 for day in range(1, num_days + 1):
                     start_datetime_str = f"{current_date.strftime('%Y-%m-%d')}T09:00:00"
+                    payload = {
+                        "city": t["destination"],
+                        "preference": t["vibe"],
+                        "num_places": 4 if day > 1 else 5,
+                        "start_datetime": start_datetime_str,
+                        "duration_per_place": [60],
+                        "place_type": "all",
+                        "exclude_names": exclude_names
+                    }
                     ai_response = await client.post(
                         f"{ai_core_url}/api/v1/generate-itinerary",
-                        json={
-                            "city": t["destination"],
-                            "preference": t["vibe"],
-                            "num_places": 4 if day > 1 else 5,
-                            "start_datetime": start_datetime_str,
-                            "duration_per_place": [60],
-                            "place_type": "all"
-                        }
+                        json=payload
                     )
                     if ai_response.status_code != 200:
                         raise RuntimeError(f"AI Core status code {ai_response.status_code}: {ai_response.text}")
@@ -201,10 +234,15 @@ async def generate_itinerary(
                     day_itin = day_data.get("itinerary", [])
                     for item in day_itin:
                         item["day_number"] = day
+                        if item.get("name"):
+                            exclude_names.append(item["name"])
                     all_itinerary_list.extend(day_itin)
                     if day_data.get("weather_mode"):
                         weather_modes.append(day_data["weather_mode"])
                     current_date += timedelta(days=1)
+            
+            # Enrich details from Google Places
+            await enrich_itinerary_items(all_itinerary_list, t["destination"])
         except Exception as api_err:
             print(f"[Trips API] AI Core connection failed or returned error: {api_err}. Running LLM fallback...")
             all_itinerary_list = generate_fallback_itinerary(t["destination"], t["vibe"], num_days, "09:00")
@@ -235,6 +273,8 @@ async def generate_itinerary(
                 "rating": item.get("rating"),
                 "total_reviews": item.get("total_reviews"),
                 "duration_minutes": duration_min,
+                "image": item.get("image"),
+                "cost": item.get("cost", 0),
             })
 
             items_to_insert.append({
