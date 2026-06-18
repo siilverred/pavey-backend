@@ -16,6 +16,7 @@ class GuestPlanRequest(BaseModel):
     days: int
     arrival_time: Optional[str] = "09:00"
     departure_time: Optional[str] = "14:00"
+    bypass_cache: Optional[bool] = False
 
 class TripCreate(BaseModel):
     destination: str
@@ -121,7 +122,8 @@ async def generate_guest_plan(data: GuestPlanRequest):
                             "num_places": 4 if day > 1 else 5,
                             "start_datetime": start_datetime_str,
                             "duration_per_place": [60],
-                            "place_type": "all"
+                            "place_type": "all",
+                            "bypass_cache": data.bypass_cache
                         }
                     )
                     if ai_response.status_code != 200:
