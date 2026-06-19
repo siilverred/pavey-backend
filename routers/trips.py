@@ -124,6 +124,10 @@ async def enrich_itinerary_items(itinerary_list: list, city: str):
                 item["rating"] = enrichment.get("rating")
             if enrichment.get("total_reviews"):
                 item["total_reviews"] = enrichment.get("total_reviews")
+            if enrichment.get("latitude") is not None:
+                item["latitude"] = enrichment.get("latitude")
+            if enrichment.get("longitude") is not None:
+                item["longitude"] = enrichment.get("longitude")
 
 @router.post("/generate-plan")
 async def generate_guest_plan(data: GuestPlanRequest):
@@ -480,8 +484,8 @@ Return ONLY a valid JSON object in this exact format, no other text:
 }}
 """
     try:
-        # Scale max_tokens dynamically based on number of days (600 tokens/day, min 2048, max 4096)
-        max_tokens = min(4096, max(2048, days * 600))
+        # Scale max_tokens dynamically based on number of days (800 tokens/day, min 2048, max 8192) to prevent JSON truncation
+        max_tokens = min(8192, max(2048, days * 800))
         reply = chat_with_llama(
             message=prompt,
             system_prompt="You are a travel itinerary expert. Respond only with a single valid JSON block.",

@@ -24,7 +24,7 @@ async def enrich_place_details(place_name: str, city: str) -> Dict[str, Any]:
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": PLACES_KEY,
-        "X-Goog-FieldMask": "places.id,places.displayName,places.photos,places.priceLevel,places.rating,places.userRatingCount"
+        "X-Goog-FieldMask": "places.id,places.displayName,places.photos,places.priceLevel,places.rating,places.userRatingCount,places.location"
     }
 
     # Query with city context to improve search accuracy
@@ -64,11 +64,17 @@ async def enrich_place_details(place_name: str, city: str) -> Dict[str, Any]:
                     rating = best_match.get("rating")
                     user_ratings = best_match.get("userRatingCount")
                     
+                    location = best_match.get("location", {})
+                    latitude = location.get("latitude")
+                    longitude = location.get("longitude")
+                    
                     return {
                         "image": photo_url,
                         "cost": estimated_cost,
                         "rating": rating,
-                        "total_reviews": user_ratings
+                        "total_reviews": user_ratings,
+                        "latitude": latitude,
+                        "longitude": longitude
                     }
             else:
                 print(f"[GooglePlaces] API returned status {res.status_code}: {res.text}")
