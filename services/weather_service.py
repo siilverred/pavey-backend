@@ -20,11 +20,14 @@ async def get_current_weather(lat: float, lon: float):
         )
     data = res.json()
     return {
-        "city": data["name"],
+        "city": data.get("name", "Unknown City"),
         "temp_celsius": data["main"]["temp"],
+        "feels_like": data["main"]["feels_like"],
         "humidity": data["main"]["humidity"],
+        "wind_speed": data["wind"]["speed"] * 3.6 if "wind" in data else 0.0,
         "condition": data["weather"][0]["description"],
-        "icon": data["weather"][0]["icon"]
+        "icon": data["weather"][0]["icon"],
+        "rain": data.get("rain", {}).get("1h", 0.0)
     }
 
 async def get_forecast(lat: float, lon: float):
