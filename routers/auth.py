@@ -19,22 +19,39 @@ class OnboardingSave(BaseModel):
 @router.post("/register")
 async def register(data: AuthRequest):
     try:
-        res = supabase.auth.admin.create_user({
+        # Step 1: sign_up — works with service role key on all deployments
+        res = supabase.auth.sign_up({
             "email": data.email,
             "password": data.password,
-            "email_confirm": True
         })
-        if res and res.user:
-            try:
-                # Simpan user ke tabel 'users' di DB
-                supabase.table("users").upsert({
-                    "id": res.user.id,
-                    "email": res.user.email,
-                    "name": res.user.email.split("@")[0]
-                }).execute()
-            except Exception as e:
-                print(f"[Auth] Failed to insert to users table: {e}")
-        return {"message": "Register berhasil", "user_id": res.user.id}
+
+        if not res or not res.user:
+            raise HTTPException(status_code=400, detail="Registrasi gagal — coba lagi")
+
+        user = res.user
+
+        # Step 2: Auto-confirm email so user can log in immediately
+        try:
+            supabase.auth.admin.update_user_by_id(
+                user.id,
+                {"email_confirm": True}
+            )
+        except Exception as e:
+            print(f"[Auth] Warning: Could not auto-confirm email: {e}")
+
+        # Step 3: Sync ke tabel 'users'
+        try:
+            supabase.table("users").upsert({
+                "id": user.id,
+                "email": user.email,
+                "name": user.email.split("@")[0]
+            }).execute()
+        except Exception as e:
+            print(f"[Auth] Failed to insert to users table: {e}")
+
+        return {"message": "Register berhasil", "user_id": user.id}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
