@@ -18,42 +18,60 @@ class OnboardingSave(BaseModel):
 
 @router.post("/register")
 async def register(data: AuthRequest):
+    user = None
+
+    # Strategy 1: admin.create_user — no email sent, no rate limit, auto-confirmed.
+    # This works when the Supabase service role key has admin privileges.
     try:
-        # Step 1: sign_up — works with service role key on all deployments
-        res = supabase.auth.sign_up({
+        res = supabase.auth.admin.create_user({
             "email": data.email,
             "password": data.password,
+            "email_confirm": True,
         })
+        if res and res.user:
+            user = res.user
+    except Exception as admin_err:
+        print(f"[Auth] admin.create_user failed ({admin_err}), falling back to sign_up")
 
-        if not res or not res.user:
-            raise HTTPException(status_code=400, detail="Registrasi gagal — coba lagi")
-
-        user = res.user
-
-        # Step 2: Auto-confirm email so user can log in immediately
+    # Strategy 2: sign_up fallback — sends confirmation email (rate-limited by Supabase).
+    # Used when admin creation is unavailable.
+    if user is None:
         try:
-            supabase.auth.admin.update_user_by_id(
-                user.id,
-                {"email_confirm": True}
-            )
+            res2 = supabase.auth.sign_up({
+                "email": data.email,
+                "password": data.password,
+            })
+            if not res2 or not res2.user:
+                raise HTTPException(status_code=400, detail="Registrasi gagal — coba lagi")
+            user = res2.user
+            # Auto-confirm so user can log in immediately without checking email
+            try:
+                supabase.auth.admin.update_user_by_id(user.id, {"email_confirm": True})
+            except Exception as confirm_err:
+                print(f"[Auth] Warning: Could not auto-confirm email: {confirm_err}")
+        except HTTPException:
+            raise
         except Exception as e:
-            print(f"[Auth] Warning: Could not auto-confirm email: {e}")
+            err_msg = str(e)
+            if "rate limit" in err_msg.lower() or "429" in err_msg:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Terlalu banyak percobaan registrasi. Coba lagi dalam beberapa menit."
+                )
+            raise HTTPException(status_code=400, detail=err_msg)
 
-        # Step 3: Sync ke tabel 'users'
-        try:
-            supabase.table("users").upsert({
-                "id": user.id,
-                "email": user.email,
-                "name": user.email.split("@")[0]
-            }).execute()
-        except Exception as e:
-            print(f"[Auth] Failed to insert to users table: {e}")
-
-        return {"message": "Register berhasil", "user_id": user.id}
-    except HTTPException:
-        raise
+    # Sync user record to 'users' table
+    try:
+        supabase.table("users").upsert({
+            "id": user.id,
+            "email": user.email,
+            "name": user.email.split("@")[0],
+        }).execute()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"[Auth] Failed to insert to users table: {e}")
+
+    return {"message": "Register berhasil", "user_id": user.id}
+
 
 @router.post("/login")
 async def login(data: AuthRequest):
