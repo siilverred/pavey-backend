@@ -37,6 +37,16 @@ async def get_wikipedia_image(query: str) -> Optional[str]:
                 data = res.json()
                 pages = data.get("query", {}).get("pages", {})
                 for page_id, page in pages.items():
+                    title = page.get("title", "")
+                    title_lower = title.lower()
+                    query_lower = query.lower()
+                    generic_titles = {
+                        "bali", "lombok", "jakarta", "bandung", "yogyakarta", "indonesia", 
+                        "surabaya", "medan", "semarang", "makassar", "denpasar", "singapore",
+                        "malaysia", "kuala lumpur", "thailand", "bangkok", "phuket"
+                    }
+                    if title_lower in generic_titles and title_lower != query_lower:
+                        continue
                     if "original" in page:
                         return page["original"].get("source")
             
@@ -47,6 +57,16 @@ async def get_wikipedia_image(query: str) -> Optional[str]:
                 data = res.json()
                 pages = data.get("query", {}).get("pages", {})
                 for page_id, page in pages.items():
+                    title = page.get("title", "")
+                    title_lower = title.lower()
+                    query_lower = query.lower()
+                    generic_titles = {
+                        "bali", "lombok", "jakarta", "bandung", "yogyakarta", "indonesia", 
+                        "surabaya", "medan", "semarang", "makassar", "denpasar", "singapore",
+                        "malaysia", "kuala lumpur", "thailand", "bangkok", "phuket"
+                    }
+                    if title_lower in generic_titles and title_lower != query_lower:
+                        continue
                     if "original" in page:
                         return page["original"].get("source")
     except Exception as e:
@@ -74,6 +94,16 @@ async def get_wikidata_image(query: str) -> Optional[str]:
                 data = res.json()
                 search_results = data.get("search", [])
                 for match in search_results:
+                    title = match.get("label", "")
+                    title_lower = title.lower()
+                    query_lower = query.lower()
+                    generic_titles = {
+                        "bali", "lombok", "jakarta", "bandung", "yogyakarta", "indonesia", 
+                        "surabaya", "medan", "semarang", "makassar", "denpasar", "singapore",
+                        "malaysia", "kuala lumpur", "thailand", "bangkok", "phuket"
+                    }
+                    if title_lower in generic_titles and title_lower != query_lower:
+                        continue
                     entity_id = match.get("id")
                     if not entity_id:
                         continue
