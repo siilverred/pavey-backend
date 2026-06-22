@@ -20,6 +20,10 @@ class GuestPlanRequest(BaseModel):
     departure_time: Optional[str] = "14:00"
     bypass_cache: Optional[bool] = False
 
+class EnrichRequest(BaseModel):
+    places: List[str]
+    city: str
+
 class TripCreate(BaseModel):
     destination: str
     start_date: date
@@ -128,6 +132,33 @@ async def enrich_itinerary_items(itinerary_list: list, city: str):
                 item["latitude"] = enrichment.get("latitude")
             if enrichment.get("longitude") is not None:
                 item["longitude"] = enrichment.get("longitude")
+
+@router.post("/enrich-places")
+async def enrich_places(data: EnrichRequest):
+    try:
+        tasks = []
+        for name in data.places:
+            if name:
+                tasks.append(enrich_place_details(name, data.city))
+            else:
+                tasks.append(asyncio.sleep(0, result={}))
+        results = await asyncio.gather(*tasks)
+        
+        response_data = []
+        for name, res in zip(data.places, results):
+            item = {
+                "name": name,
+                "image": res.get("image"),
+                "rating": res.get("rating"),
+                "cost": res.get("cost"),
+                "latitude": res.get("latitude"),
+                "longitude": res.get("longitude")
+            }
+            response_data.append(item)
+            
+        return {"results": response_data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/generate-plan")
 async def generate_guest_plan(data: GuestPlanRequest):
