@@ -9,6 +9,61 @@ import re
 
 router = APIRouter()
 
+from services.google_places import enrich_place_details
+import asyncio
+import json
+
+async def enrich_chatbot_reply(reply: str) -> str:
+    # Match block enclosed by DATA_JSON> ... <DATA_JSON or <DATA_JSON> ... </DATA_JSON> or ```json ... ```
+    match = re.search(r'DATA_JSON>\s*(\{[\s\S]*?\})\s*<DATA_JSON', reply)
+    if not match:
+        match = re.search(r'<DATA_JSON>\s*(\{[\s\S]*?\})\s*</DATA_JSON>', reply, re.IGNORECASE)
+    if not match:
+        match = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', reply, re.IGNORECASE)
+        
+    if match:
+        try:
+            json_str = match.group(1)
+            parsed_json = json.loads(json_str)
+            intent = parsed_json.get("intent")
+            city = parsed_json.get("city") or ""
+            places = parsed_json.get("places") or []
+            
+            if intent in ["recommend_places", "travel_plan"] and places:
+                # Run parallel enrichment
+                tasks = []
+                for p in places:
+                    name = p.get("name", "")
+                    if name:
+                        tasks.append(enrich_place_details(name, city))
+                    else:
+                        tasks.append(asyncio.sleep(0, result={}))
+                
+                results = await asyncio.gather(*tasks)
+                
+                for p, res in zip(places, results):
+                    if res:
+                        if res.get("image"):
+                            p["image"] = res["image"]
+                        if res.get("rating") is not None:
+                            p["rating"] = res["rating"]
+                        if res.get("latitude") is not None:
+                            p["lat"] = res["latitude"]
+                        if res.get("longitude") is not None:
+                            p["lon"] = res["longitude"]
+                        if res.get("cost") is not None:
+                            p["cost"] = res["cost"]
+                            
+                # Re-serialize modified JSON
+                new_json_str = json.dumps(parsed_json, ensure_ascii=False)
+                start_idx = match.start(1)
+                end_idx = match.end(1)
+                reply = reply[:start_idx] + new_json_str + reply[end_idx:]
+        except Exception as e:
+            print(f"[Chatbot Enrichment] Failed to parse or enrich JSON block: {e}")
+            
+    return reply
+
 security = HTTPBearer(auto_error=False)
 
 class ChatMessage(BaseModel):
@@ -355,6 +410,12 @@ PENTING:
 """
 
         reply = chat_with_llama(data.message, system_prompt)
+
+        # Enrich chatbot places with Wikidata/Wikipedia images/coords fallbacks
+        try:
+            reply = await enrich_chatbot_reply(reply)
+        except Exception as enrich_err:
+            print(f"[Chatbot Enrichment Error]: {enrich_err}")
 
         # Simpan percakapan jika user login
         if current_user:

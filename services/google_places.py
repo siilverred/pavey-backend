@@ -5,6 +5,28 @@ from typing import Optional, Dict, Any
 
 PLACES_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
 
+CITY_IMAGE_CACHE = {}
+
+async def get_cached_city_image(city: str) -> Optional[str]:
+    """
+    Fetch and cache a real photo of the city from Wikidata/Wikipedia.
+    """
+    if not city:
+        return None
+    city_clean = city.strip().split(',')[0].strip()
+    if city_clean in CITY_IMAGE_CACHE:
+        return CITY_IMAGE_CACHE[city_clean]
+    
+    # Try Wikidata search first
+    img = await get_wikidata_image(city_clean)
+    if not img:
+        # Try Wikipedia search
+        img = await get_wikipedia_image(city_clean)
+        
+    if img:
+        CITY_IMAGE_CACHE[city_clean] = img
+    return img
+
 PRICE_MAPPING = {
     "PRICE_LEVEL_FREE": 0,
     "PRICE_LEVEL_INEXPENSIVE": 35000,
@@ -47,6 +69,24 @@ async def get_wikipedia_image(query: str) -> Optional[str]:
                     }
                     if title_lower in generic_titles and title_lower != query_lower:
                         continue
+                    
+                    # Relevance check to avoid completely wrong matches
+                    q_clean = query_lower.replace("indonesia", "").strip()
+                    t_clean = title_lower.replace("indonesia", "").strip()
+                    q_words = set(w for w in q_clean.split() if len(w) > 2)
+                    t_words = set(w for w in t_clean.split() if len(w) > 2)
+                    is_match = False
+                    if q_clean in t_clean or t_clean in q_clean:
+                        is_match = True
+                    elif q_words and t_words and q_words.intersection(t_words):
+                        # Subtract generic words to avoid wrong matches on terms like 'cafe', 'restaurant'
+                        overlap = q_words.intersection(t_words)
+                        if overlap - {"cafe", "restaurant", "studio", "hotel", "coffee", "shop", "bar", "place", "street"}:
+                            is_match = True
+                    
+                    if not is_match:
+                        continue
+
                     if "original" in page:
                         return page["original"].get("source")
             
@@ -67,6 +107,23 @@ async def get_wikipedia_image(query: str) -> Optional[str]:
                     }
                     if title_lower in generic_titles and title_lower != query_lower:
                         continue
+
+                    # Relevance check to avoid completely wrong matches
+                    q_clean = query_lower.replace("indonesia", "").strip()
+                    t_clean = title_lower.replace("indonesia", "").strip()
+                    q_words = set(w for w in q_clean.split() if len(w) > 2)
+                    t_words = set(w for w in t_clean.split() if len(w) > 2)
+                    is_match = False
+                    if q_clean in t_clean or t_clean in q_clean:
+                        is_match = True
+                    elif q_words and t_words and q_words.intersection(t_words):
+                        overlap = q_words.intersection(t_words)
+                        if overlap - {"cafe", "restaurant", "studio", "hotel", "coffee", "shop", "bar", "place", "street"}:
+                            is_match = True
+                    
+                    if not is_match:
+                        continue
+
                     if "original" in page:
                         return page["original"].get("source")
     except Exception as e:
@@ -104,6 +161,23 @@ async def get_wikidata_image(query: str) -> Optional[str]:
                     }
                     if title_lower in generic_titles and title_lower != query_lower:
                         continue
+
+                    # Relevance check to avoid completely wrong matches
+                    q_clean = query_lower.replace("indonesia", "").strip()
+                    t_clean = title_lower.replace("indonesia", "").strip()
+                    q_words = set(w for w in q_clean.split() if len(w) > 2)
+                    t_words = set(w for w in t_clean.split() if len(w) > 2)
+                    is_match = False
+                    if q_clean in t_clean or t_clean in q_clean:
+                        is_match = True
+                    elif q_words and t_words and q_words.intersection(t_words):
+                        overlap = q_words.intersection(t_words)
+                        if overlap - {"cafe", "restaurant", "studio", "hotel", "coffee", "shop", "bar", "place", "street"}:
+                            is_match = True
+                    
+                    if not is_match:
+                        continue
+
                     entity_id = match.get("id")
                     if not entity_id:
                         continue
@@ -207,6 +281,10 @@ async def enrich_place_details(place_name: str, city: str) -> Dict[str, Any]:
         if not wiki_img:
             # 4. Try Wikipedia with place name + city context
             wiki_img = await get_wikipedia_image(f"{place_name} {city}")
+            
+        # 5. Try City fallback if no specific place image was found
+        if not wiki_img and city:
+            wiki_img = await get_cached_city_image(city)
             
         if wiki_img:
             photo_url = wiki_img
