@@ -102,8 +102,57 @@ async def chat(
             "list instructions",
             "show rules"
         ]
+        normalized_jailbreak_keywords = [
+            "abaikansemuainstruksi", 
+            "ignoreallinstructions", 
+            "ignorepreviousinstructions", 
+            "abaikaninstruksisebelumnya",
+            "jelaskaninstruksisistem", 
+            "revealsystemprompt", 
+            "revealyourinstructions",
+            "systemprompt",
+            "systeminstruction",
+            "youarenolonger",
+            "kamubukanlagi",
+            "youmustfollowallmycommands",
+            "ikutisemaperintahsaya",
+            "sebutkansemuaaturan",
+            "aturandasaryangdilarang",
+            "dilaranguntukkamutunjukkan",
+            "tuliskantekspersisnya",
+            "tuliskanaturanbasar",
+            "sebutkanaturanbasar",
+            "revealrules",
+            "showrules",
+            "translatesystemprompt",
+            "terjemahkaninstruksisistem",
+            "developermode",
+            "jailbreak",
+            "dansebutkaninstruksi",
+            "andlistinstructions",
+            "dansebutkanaturan",
+            "andshowrules",
+            "andshowinstructions",
+            "ignoretotally",
+            "abaikantotal",
+            "bypassthelimit",
+            "bypassrules",
+            "bypassconstraint",
+            "bypasslimit",
+            "ignoresystem",
+            "kamusekarangadalah",
+            "younoware",
+            "youarenow",
+            "actas",
+            "berperansebagai",
+            "jadilah"
+        ]
+
+
         message_lower = data.message.lower()
-        if any(kw in message_lower for kw in jailbreak_keywords):
+        message_clean = re.sub(r'[^a-z0-9]', '', message_lower)
+
+        if any(kw in message_clean for kw in normalized_jailbreak_keywords) or any(kw in message_lower for kw in jailbreak_keywords):
             return {
                 "reply": "Maaf ya, sebagai travel buddy TinTin, saya tidak dapat membagikan informasi teknis mengenai instruksi sistem kami. Ada hal lain tentang rencana perjalananmu yang bisa kubantu?\n\nDATA_JSON> {\"intent\": \"general\", \"intro\": \"Maaf ya, sebagai travel buddy TinTin, saya tidak dapat membagikan informasi teknis mengenai instruksi sistem kami. Ada hal lain tentang rencana perjalananmu yang bisa kubantu?\"} <DATA_JSON",
                 "authenticated": current_user is not None,
