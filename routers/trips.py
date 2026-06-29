@@ -109,6 +109,70 @@ async def get_itinerary(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class SaveItineraryItem(BaseModel):
+    day_number: int
+    order_index: int
+    place_name: str
+    place_type: str
+    start_time: str
+    end_time: str
+    travel_time_to_next: int
+    notes: str
+
+@router.post("/{trip_id}/itinerary")
+async def save_itinerary(
+    trip_id: str,
+    data: List[SaveItineraryItem],
+    current_user = Depends(get_current_user)
+):
+    try:
+        # Check if the trip exists and belongs to the user
+        trip = supabase.table("trips")\
+            .select("id")\
+            .eq("id", trip_id)\
+            .eq("user_id", current_user.id)\
+            .single()\
+            .execute()
+        if not trip.data:
+            raise HTTPException(status_code=404, detail="Trip tidak ditemukan")
+
+        # Delete existing itinerary items
+        supabase.table("itinerary_items")\
+            .delete()\
+            .eq("trip_id", trip_id)\
+            .execute()
+
+        # Insert new itinerary items
+        items_to_insert = []
+        for item in data:
+            items_to_insert.append({
+                "trip_id": trip_id,
+                "day_number": item.day_number,
+                "order_index": item.order_index,
+                "place_name": item.place_name,
+                "place_type": item.place_type,
+                "start_time": item.start_time,
+                "end_time": item.end_time,
+                "travel_time_to_next": item.travel_time_to_next,
+                "notes": item.notes,
+            })
+
+        if items_to_insert:
+            supabase.table("itinerary_items").insert(items_to_insert).execute()
+
+        # Also update the trip status to 'generated' so we know it has an itinerary
+        supabase.table("trips")\
+            .update({"status": "generated"})\
+            .eq("id", trip_id)\
+            .execute()
+
+        return {"message": "Itinerary berhasil disimpan", "trip_id": trip_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 async def enrich_itinerary_items(itinerary_list: list, city: str):
     if not itinerary_list:
         return
